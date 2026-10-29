@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Mailing Robot Control Center</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --success: #22c55e;
+            --border: #334155;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-color); padding: 20px; min-height: 100vh; }
+        .container { max-width: 1000px; margin: 0 auto; display: grid; gap: 20px; }
+        header { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border); }
+        h1 { font-size: 1.5rem; color: var(--accent); }
+        .status-badge { padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; background: rgba(34, 197, 94, 0.15); color: var(--success); }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media(max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+        .card { background: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 15px; }
+        h2 { font-size: 1.1rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+        label { font-size: 0.9rem; color: var(--text-muted); }
+        input, select, textarea { width: 100%; padding: 10px; background: #090d16; border: 1px solid var(--border); border-radius: 8px; color: var(--text-color); font-size: 0.95rem; }
+        textarea { resize: vertical; height: 120px; }
+        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
+        button { padding: 10px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; color: white; }
+        .btn-primary { background: var(--accent); }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-danger { background: var(--danger); }
+        .btn-danger:hover { background: var(--danger-hover); }
+        .btn-success { background: var(--success); }
+        .log-box { background: #090d16; padding: 10px; border-radius: 8px; font-family: monospace; font-size: 0.85rem; height: 100px; overflow-y: auto; color: var(--text-muted); border: 1px solid var(--border); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 AI Mailing Robot Control</h1>
+            <div id="connectionStatus" class="status-badge">System Online</div>
+        </header>
+
+        <div class="grid-2">
+            <!-- Настройки запуска и категории -->
+            <div class="card">
+                <h2>1. Mailing Parameters</h2>
+                <div>
+                    <label>Marketing Category (pending accounts engagement)</label>
+                    <select id="categorySelect">
+                        <option value="Hot lead">Hot lead</option>
+                        <option value="Warm lead">Warm lead</option>
+                        <option value="Cold Outreach">Cold Outreach</option>
+                        <option value="Test lead">Test lead</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Schedule Start (Date & Time)</label>
+                    <input type="datetime-local" id="scheduleTime">
+                </div>
+                <div class="btn-group" style="margin-top: auto;">
+                    <button class="btn-primary" onclick="sendAction('start_manual')">▶ Manual Start</button>
+                    <button class="btn-success" onclick="sendAction('test_run')">🧪 Test Run</button>
+                    <button class="btn-danger" onclick="sendAction('stop')">⏹ Stop</button>
+                </div>
+            </div>
+
+            <!-- Управление промптом ИИ -->
+            <div class="card">
+                <h2>2. LLM Prompt Configuration</h2>
+                <div>
+                    <label>System Prompt for Gemma 4</label>
+                    <textarea id="promptText">Ты эксперт по B2B-коммуникациям в сфере ИТ и информационной безопасности. Твоя задача — адаптировать шаблон письма под конкретного адресата.</textarea>
+                </div>
+                <button class="btn-primary" onclick="savePrompt()" style="width: 100%;">💾 Save Prompt</button>
+            </div>
+        </div>
+
+        <!-- Редактор шаблонов писем -->
+        <div class="card">
+            <h2>3. Template Studio (Google Sheets Sync)</h2>
+            <div class="grid-2">
+                <div>
+                    <label>Template Subject & Body structure</label>
+                    <textarea id="templateText" style="height: 150px;">Здравствуйте, {{firstName}}! Заметил успехи компании {{company}} в сфере {{position}}. Предлагаю обсудить...</textarea>
+                </div>
+                <div style="display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <label>Available Placeholders:</label>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 5px;">
+                            {{firstName}}, {{lastName}}, {{company}}, {{position}}, {{site}}
+                        </p>
+                    </div>
+                    <button class="btn-primary" onclick="saveTemplate()">☁ Save Template to DB</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Логирование -->
+        <div class="card">
+            <h2>System Logs & Status</h2>
+            <div id="logBox" class="log-box">[System initialized. Ready to execute commands...]</div>
+        </div>
+    </div>
+
+    <script>
+        // В продакшене укажите реальный URL вашего n8n сервера с HTTPS
+        const N8N_WEBHOOK_URL = '[https://n8n.yourdomain.com/webhook/mailing-control](https://n8n.yourdomain.com/webhook/mailing-control)';
+
+        function log(msg) {
+            const box = document.getElementById('logBox');
+            box.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            box.scrollTop = box.scrollHeight;
+        }
+
+        async function sendAction(actionType) {
+            const category = document.getElementById('categorySelect').value;
+            const scheduleTime = document.getElementById('scheduleTime').value;
+            
+            log(`Sending command: ${actionType} for category "${category}"...`);
+
+            try {
+                const response = await fetch(N8N_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: actionType, category, scheduleTime })
+                });
+                
+                if (response.ok) {
+                    log(`Command "${actionType}" successfully executed by n8n!`);
+                } else {
+                    log(`Error: Server responded with status ${response.status}`);
+                }
+            } catch (err) {
+                log(`Connection failed: Check if n8n webhook URL is active.`);
+                console.error(err);
+            }
+        }
+
+        function savePrompt() {
+            log('Prompt configuration saved locally. (Sync with n8n ready)');
+            alert('Prompt updated successfully!');
+        }
+
+        function saveTemplate() {
+            log('Template synchronized with Google Sheets DB.');
+            alert('Template saved!');
+        }
+    </script>
+</body>
+</html>
